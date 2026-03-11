@@ -138,7 +138,7 @@ class AnswerPanel: NSPanel {
         dragHandle.frame = NSRect(x: 0, y: 0, width: 400, height: 44)
         header.addSubview(dragHandle, positioned: .below, relativeTo: nil)
 
-        let ghostLabel = NSTextField(labelWithString: "👻 ghost")
+        let ghostLabel = NSTextField(labelWithString: "ghost")
         ghostLabel.font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         ghostLabel.textColor = NSColor.white.withAlphaComponent(0.5)
         ghostLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -176,7 +176,7 @@ class AnswerPanel: NSPanel {
         screenshotPill.translatesAutoresizingMaskIntoConstraints = false
         vfx.addSubview(screenshotPill)
 
-        let pillLabel = NSTextField(labelWithString: "📷 Screenshot active")
+        let pillLabel = NSTextField(labelWithString: "Screenshot active")
         pillLabel.font = NSFont.systemFont(ofSize: 11)
         pillLabel.textColor = NSColor.systemBlue
         pillLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -471,6 +471,7 @@ class AnswerPanel: NSPanel {
                 // Don't re-save on show — only on actual drag
                 super.setFrame(NSRect(x: sx, y: sy, width: panelWidth, height: panelHeight), display: false)
                 orderFrontRegardless()
+                updateModeUI()
                 startNewAssistantBubble()
                 setupKeyMonitors()
                 return
@@ -493,6 +494,7 @@ class AnswerPanel: NSPanel {
         orderFrontRegardless()
 
         // Start a bubble ready for the first streaming response
+        updateModeUI()
         startNewAssistantBubble()
 
         setupKeyMonitors()
@@ -524,13 +526,17 @@ class AnswerPanel: NSPanel {
     // MARK: - Screenshot pill
 
     func showScreenshotPill() {
-        screenshotPill.isHidden = false
-        pillHeightConstraint.constant = 48
+        DispatchQueue.main.async {
+            self.screenshotPill.isHidden = false
+            self.pillHeightConstraint.constant = 48
+        }
     }
 
     func hideScreenshotPill() {
-        screenshotPill.isHidden = true
-        pillHeightConstraint.constant = 0
+        DispatchQueue.main.async {
+            self.screenshotPill.isHidden = true
+            self.pillHeightConstraint.constant = 0
+        }
     }
 
     @objc func clearScreenshot() {
@@ -540,8 +546,25 @@ class AnswerPanel: NSPanel {
 
     // MARK: - Mode switching
 
-    @objc func switchToScreenshotMode() { currentMode = .screenshot }
-    @objc func switchToChatMode()       { currentMode = .chat }
+    @objc func switchToScreenshotMode() {
+        guard currentMode != .screenshot else { return }
+        currentMode = .screenshot
+        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        AIManager.shared.clearHistory()
+        addSeparator("— Screenshot mode —")
+        NotificationCenter.default.post(name: NSNotification.Name("GhostCheckScreenshot"), object: nil)
+        updateModeUI()
+    }
+
+    @objc func switchToChatMode() {
+        guard currentMode != .chat else { return }
+        currentMode = .chat
+        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        AIManager.shared.clearHistory()
+        addSeparator("— Chat mode —")
+        hideScreenshotPill()
+        updateModeUI()
+    }
 
     func updateModeUI() {
         switch currentMode {
@@ -554,6 +577,31 @@ class AnswerPanel: NSPanel {
             modePhotoBtn.contentTintColor = NSColor.white.withAlphaComponent(0.3)
             inputField.placeholderString  = "Ask anything..."
         }
+    }
+
+    // MARK: - Separator label
+
+    func addSeparator(_ text: String) {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = NSTextField(labelWithString: text)
+        label.font = NSFont.systemFont(ofSize: 10)
+        label.textColor = NSColor.white.withAlphaComponent(0.25)
+        label.alignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            container.heightAnchor.constraint(equalToConstant: 24),
+        ])
+
+        contentStack.addArrangedSubview(container)
+        scrollToBottom()
     }
 
     // MARK: - Send message

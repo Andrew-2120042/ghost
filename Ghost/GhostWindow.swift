@@ -42,6 +42,19 @@ class GhostWindow: NSPanel {
             self?.currentScreenshot = nil
             AIManager.shared.clearHistory()
         }
+
+        // Respond to mode toggle asking whether a screenshot exists
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("GhostCheckScreenshot"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if self?.currentScreenshot != nil {
+                self?.answerPanel?.showScreenshotPill()
+            } else {
+                self?.answerPanel?.hideScreenshotPill()
+            }
+        }
     }
 
     override var canBecomeKey: Bool { false }
@@ -75,8 +88,10 @@ class GhostWindow: NSPanel {
                             ChatMessage(role: "assistant", content: fullText)
                         )
                     },
-                    onError: { error in
+                    onError: { [weak self] error in
                         print("Ghost: follow-up error = \(error)")
+                        self?.answerPanel?.appendStreamingText("⚠️ \(error)")
+                        self?.answerPanel?.finalizeStreamingBubble()
                     }
                 )
             }
