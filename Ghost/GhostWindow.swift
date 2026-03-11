@@ -1,8 +1,16 @@
 import Cocoa
 
+enum GhostMode {
+    case screenshot
+    case chat
+}
+
 class GhostWindow: NSPanel {
 
     var answerPanel: AnswerPanel?
+    var currentScreenshot: NSImage?
+    var currentMode: GhostMode = .screenshot
+
     private var escMonitor: Any?
     private var escMonitorLocal: Any?
     private var safetyTimer: Timer?
@@ -24,6 +32,16 @@ class GhostWindow: NSPanel {
         self.acceptsMouseMovedEvents = true
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         self.sharingType = .none
+
+        // Observe screenshot clear from the panel's "Clear" button
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("GhostClearScreenshot"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.currentScreenshot = nil
+            AIManager.shared.clearHistory()
+        }
     }
 
     override var canBecomeKey: Bool { false }
@@ -31,8 +49,37 @@ class GhostWindow: NSPanel {
 
     func activate() {
         print("Ghost: activate() called")
+
         if answerPanel == nil {
             answerPanel = AnswerPanel()
+
+            // Wire up follow-up callback (set once, persists across activations)
+            answerPanel?.onFollowUp = { [weak self] text, mode in
+                guard let self = self else { return }
+
+                AIManager.shared.conversationHistory.append(
+                    ChatMessage(role: "user", content: text)
+                )
+
+                let image: NSImage? = (mode == .screenshot) ? self.currentScreenshot : nil
+
+                AIManager.shared.query(
+                    image: image,
+                    prompt: text,
+                    onChunk: { [weak self] chunk in
+                        self?.answerPanel?.appendStreamingText(chunk)
+                    },
+                    onComplete: { [weak self] fullText in
+                        self?.answerPanel?.finalizeStreamingBubble()
+                        AIManager.shared.conversationHistory.append(
+                            ChatMessage(role: "assistant", content: fullText)
+                        )
+                    },
+                    onError: { error in
+                        print("Ghost: follow-up error = \(error)")
+                    }
+                )
+            }
         }
 
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -49,25 +96,33 @@ class GhostWindow: NSPanel {
                     return
                 }
 
+                self.currentScreenshot = image
+                AIManager.shared.clearHistory()
+
                 print("Ghost: image captured, sending to AI...")
                 let screen = NSScreen.main ?? NSScreen.screens[0]
                 self.answerPanel?.show(near: rect, onScreen: screen)
+                self.answerPanel?.showScreenshotPill()
                 self.deactivate()
 
+                // show() already called startNewAssistantBubble() — stream straight in
                 AIManager.shared.query(
                     image: image,
+                    prompt: "Answer this.",
                     onChunk: { [weak self] chunk in
-                        print("Ghost: chunk received = \(chunk)")
-                        self?.answerPanel?.appendText(chunk)
+                        self?.answerPanel?.appendStreamingText(chunk)
                     },
-                    onComplete: { [weak self] in
-                        print("Ghost: stream complete")
-                        self?.answerPanel?.startDismissTimer()
+                    onComplete: { [weak self] fullText in
+                        print("Ghost: answer complete")
+                        self?.answerPanel?.finalizeStreamingBubble()
+                        AIManager.shared.conversationHistory.append(
+                            ChatMessage(role: "assistant", content: fullText)
+                        )
                     },
                     onError: { [weak self] error in
                         print("Ghost: error = \(error)")
-                        self?.answerPanel?.appendText("⚠️ \(error)")
-                        self?.answerPanel?.startDismissTimer()
+                        self?.answerPanel?.appendStreamingText("⚠️ \(error)")
+                        self?.answerPanel?.finalizeStreamingBubble()
                     }
                 )
             }
@@ -78,9 +133,7 @@ class GhostWindow: NSPanel {
         self.orderFrontRegardless()
 
         escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
-                DispatchQueue.main.async { self?.deactivate() }
-            }
+            if event.keyCode == 53 { DispatchQueue.main.async { self?.deactivate() } }
         }
 
         escMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -113,15 +166,8 @@ class GhostWindow: NSPanel {
             NotificationCenter.default.removeObserver(observer)
             deactivateObserver = nil
         }
-
-        if let monitor = escMonitor {
-            NSEvent.removeMonitor(monitor)
-            escMonitor = nil
-        }
-        if let monitor = escMonitorLocal {
-            NSEvent.removeMonitor(monitor)
-            escMonitorLocal = nil
-        }
+        if let monitor = escMonitor     { NSEvent.removeMonitor(monitor); escMonitor     = nil }
+        if let monitor = escMonitorLocal { NSEvent.removeMonitor(monitor); escMonitorLocal = nil }
         self.contentView = nil
         self.orderOut(nil)
     }

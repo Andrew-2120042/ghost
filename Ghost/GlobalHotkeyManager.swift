@@ -8,11 +8,22 @@ final class GlobalHotkeyManager {
     var onHotkey: (() -> Void)?
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
+    private var localMonitor: Any?
+    private var permissionPollTimer: Timer?
 
     func start() {
         print("Ghost: start() called, AXTrusted=\(AXIsProcessTrusted())")
         guard AXIsProcessTrusted() else {
-            print("Ghost: event tap is NIL — accessibility not granted or tap failed")
+            print("Ghost: accessibility not granted — prompting and polling")
+            // Trigger macOS "wants to control this computer" dialog
+            let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
+            AXIsProcessTrustedWithOptions(opts as CFDictionary)
+            // Also show our own alert with a direct link to Settings
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NotificationCenter.default.post(name: NSNotification.Name("GhostNeedsAccessibility"), object: nil)
+            }
+            registerLocalMonitor()
+            startPermissionPolling()
             return
         }
 
@@ -56,7 +67,11 @@ final class GlobalHotkeyManager {
             print("Ghost: event tap FAILED — nil")
         }
 
-        guard let tap = eventTap else { return }
+        guard let tap = eventTap else {
+            print("Ghost: event tap NIL even with AXTrusted — registering fallback local monitor")
+            registerLocalMonitor()
+            return
+        }
 
         runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource!, .commonModes)
@@ -73,21 +88,50 @@ final class GlobalHotkeyManager {
         print("Ghost: global hotkey active (Cmd+Shift+Space)")
     }
 
-    func stop() {
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
+    private func startPermissionPolling() {
+        guard permissionPollTimer == nil else { return }
+        permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
+            guard let self = self else { timer.invalidate(); return }
+            if AXIsProcessTrusted() {
+                print("Ghost: accessibility granted — creating event tap")
+                timer.invalidate()
+                self.permissionPollTimer = nil
+                if let m = self.localMonitor { NSEvent.removeMonitor(m); self.localMonitor = nil }
+                self.start()
+            }
         }
+    }
+
+    private func registerLocalMonitor() {
+        guard localMonitor == nil else { return }
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let keyCode = event.keyCode
+            let flags = event.modifierFlags
+            print("Ghost: raw keyevent \(keyCode)")
+            if keyCode == 49 && flags.contains(.command) && flags.contains(.shift) {
+                DispatchQueue.main.async { self?.onHotkey?() }
+                return nil
+            }
+            return event
+        }
+        print("Ghost: fallback local monitor registered")
+    }
+
+    func stop() {
+        if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
         eventTap = nil
         runLoopSource = nil
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
+        permissionPollTimer?.invalidate(); permissionPollTimer = nil
     }
 
     func restart() {
         print("Ghost: restarting hotkey manager...")
-        if let tap = eventTap {
-            CGEvent.tapEnable(tap: tap, enable: false)
-        }
+        if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
         eventTap = nil
         runLoopSource = nil
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
+        permissionPollTimer?.invalidate(); permissionPollTimer = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.start()
         }

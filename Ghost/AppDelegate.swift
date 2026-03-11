@@ -132,6 +132,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupMenuBar()
 
+        // Accessibility permission alert
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("GhostNeedsAccessibility"),
+            object: nil,
+            queue: .main
+        ) { _ in
+            let alert = NSAlert()
+            alert.messageText = "Accessibility Required for Hotkey"
+            alert.informativeText = "Ghost needs Accessibility access so Cmd+Shift+Space works from any app.\n\nSystem Settings → Privacy & Security → Accessibility → enable Ghost."
+            alert.addButton(withTitle: "Open Settings")
+            alert.addButton(withTitle: "Later")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                NSWorkspace.shared.open(
+                    URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
+                )
+            }
+        }
+
         // FIX 3: handle screen permission failure notification
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("GhostNeedsScreenPermission"),
@@ -223,6 +242,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         menu.addItem(NSMenuItem.separator())
 
         menu.addItem(NSMenuItem(
+            title: "Reset Panel Position",
+            action: #selector(resetPanelPosition),
+            keyEquivalent: ""
+        ))
+
+        menu.addItem(NSMenuItem.separator())
+
+        menu.addItem(NSMenuItem(
             title: "Reset Onboarding",
             action: #selector(resetOnboarding),
             keyEquivalent: ""
@@ -250,6 +277,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             self.ghostWindow?.activate()
         }
+    }
+
+    @objc func resetPanelPosition() {
+        UserDefaults.standard.removeObject(forKey: "ghost.panel.position")
+        print("Ghost: panel position reset")
     }
 
     @objc func resetOnboarding() {

@@ -1,5 +1,14 @@
 import Cocoa
 
+// MARK: - Conversation message model
+
+struct ChatMessage {
+    let role: String    // "user" or "assistant"
+    let content: String
+}
+
+// MARK: - AIManager
+
 final class AIManager {
 
     static let shared = AIManager()
@@ -7,14 +16,20 @@ final class AIManager {
 
     private let serverURL = "http://localhost:3000"
     var licenseKey: String = ""
+    var conversationHistory: [ChatMessage] = []
 
     private var activeSession: URLSession?
 
+    func clearHistory() {
+        conversationHistory = []
+    }
+
     // MARK: - Query with streaming
 
-    func query(image: NSImage,
+    func query(image: NSImage?,
+               prompt: String = "Answer this.",
                onChunk: @escaping (String) -> Void,
-               onComplete: @escaping () -> Void,
+               onComplete: @escaping (String) -> Void,
                onError: @escaping (String) -> Void) {
 
         print("Ghost: query() called")
@@ -24,28 +39,10 @@ final class AIManager {
             onError("No license key")
             return
         }
-        guard let base64 = imageToBase64(image) else {
-            onError("Could not encode image")
-            return
-        }
         guard let url = URL(string: "\(serverURL)/query") else {
             onError("Invalid server URL")
             return
         }
-
-        print("Ghost: calling server at \(serverURL)/query")
-        print("Ghost: license key = \(licenseKey)")
-        print("Ghost: image base64 length = \(base64.count)")
-
-        // Health check
-        let healthURL = URL(string: "\(serverURL)/health")!
-        URLSession.shared.dataTask(with: healthURL) { data, _, _ in
-            if let data = data {
-                print("Ghost: server health = \(String(data: data, encoding: .utf8) ?? "no response")")
-            } else {
-                print("Ghost: SERVER NOT REACHABLE")
-            }
-        }.resume()
 
         let provider = UserDefaults.standard.string(forKey: "ai_provider") ?? "openai"
 
@@ -54,11 +51,22 @@ final class AIManager {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 60
 
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "licenseKey": licenseKey,
-            "image": base64,
-            "provider": provider
+            "provider": provider,
+            "prompt": prompt
         ]
+
+        if let image = image, let base64 = imageToBase64(image) {
+            print("Ghost: image base64 length = \(base64.count)")
+            body["image"] = base64
+        }
+
+        if !conversationHistory.isEmpty {
+            let historyArray = conversationHistory.map { ["role": $0.role, "content": $0.content] }
+            body["messages"] = historyArray
+        }
+
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         let delegate = SSEDelegate(onChunk: onChunk, onComplete: onComplete, onError: onError)
@@ -108,12 +116,14 @@ final class AIManager {
 private class SSEDelegate: NSObject, URLSessionDataDelegate {
 
     var onChunk: (String) -> Void
-    var onComplete: () -> Void
+    var onComplete: (String) -> Void
     var onError: (String) -> Void
     var buffer = ""
+    var fullResponse = ""
+    var didFireComplete = false
 
     init(onChunk: @escaping (String) -> Void,
-         onComplete: @escaping () -> Void,
+         onComplete: @escaping (String) -> Void,
          onError: @escaping (String) -> Void) {
         self.onChunk = onChunk
         self.onComplete = onComplete
@@ -127,7 +137,7 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
 
         print("Ghost: raw server data = \(text)")
 
-        // Handle raw JSON error responses (non-SSE, e.g. 401/402 before headers set)
+        // Handle raw JSON error responses (non-SSE, e.g. 401/402 before SSE headers)
         if text.hasPrefix("{"), let jsonData = text.data(using: .utf8),
            let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
            let error = json["error"] as? String {
@@ -137,7 +147,6 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
 
         buffer += text
 
-        // Process complete lines, keep last incomplete line in buffer
         let lines = buffer.components(separatedBy: "\n")
         buffer = lines.last ?? ""
 
@@ -153,8 +162,13 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
             else { continue }
 
             if let chunk = json["text"] as? String {
+                fullResponse += chunk
                 print("Ghost: chunk received = \(chunk)")
                 DispatchQueue.main.async { self.onChunk(chunk) }
+            } else if let done = json["done"] as? Bool, done {
+                let full = json["fullText"] as? String ?? fullResponse
+                didFireComplete = true
+                DispatchQueue.main.async { self.onComplete(full) }
             } else if let error = json["error"] as? String {
                 print("Ghost: server error = \(error)")
                 DispatchQueue.main.async { self.onError(error) }
@@ -169,9 +183,10 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
             if let error = error {
                 print("Ghost: stream error = \(error.localizedDescription)")
                 self.onError(error.localizedDescription)
-            } else {
-                print("Ghost: stream complete")
-                self.onComplete()
+            } else if !self.didFireComplete && !self.fullResponse.isEmpty {
+                // Fallback: done signal never arrived but we have content
+                print("Ghost: stream complete (fallback)")
+                self.onComplete(self.fullResponse)
             }
         }
     }
