@@ -67,6 +67,7 @@ class AnswerPanel: NSPanel {
 
     // MARK: - State
     let positionKey = "ghost.panel.position"
+    let sizeKey     = "ghost.panel.size"
     private var dismissTimer: Timer?
     private var escMonitor: Any?
     private var cmdCMonitor: Any?
@@ -74,6 +75,8 @@ class AnswerPanel: NSPanel {
 
     var currentStreamingBubble: NSTextField?
     var onFollowUp: ((String, GhostMode) -> Void)?
+    var onHide: (() -> Void)?
+    var onFullDismiss: (() -> Void)?
 
     var currentMode: GhostMode = .screenshot {
         didSet { updateModeUI() }
@@ -84,7 +87,7 @@ class AnswerPanel: NSPanel {
     init() {
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 400, height: 500),
-            styleMask: [.borderless, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -95,6 +98,8 @@ class AnswerPanel: NSPanel {
         self.hasShadow = true
         self.isMovableByWindowBackground = false
         self.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        self.minSize = NSSize(width: 300, height: 300)
+        self.maxSize = NSSize(width: 800, height: 900)
         setupUI()
     }
 
@@ -108,6 +113,11 @@ class AnswerPanel: NSPanel {
         super.setFrameOrigin(point)
     }
 
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        saveSizePublic(frameRect.size)
+    }
+
     private func savePosition(_ origin: NSPoint) {
         UserDefaults.standard.set(
             ["x": Double(origin.x), "y": Double(origin.y)],
@@ -118,6 +128,14 @@ class AnswerPanel: NSPanel {
     func savePositionPublic(_ origin: NSPoint) {
         savePosition(origin)
         print("Ghost: panel position saved \(origin)")
+    }
+
+    func saveSizePublic(_ size: NSSize) {
+        UserDefaults.standard.set(
+            ["w": Double(size.width), "h": Double(size.height)],
+            forKey: sizeKey
+        )
+        print("Ghost: panel size saved \(size)")
     }
 
     // MARK: - UI Setup
@@ -162,7 +180,7 @@ class AnswerPanel: NSPanel {
         copyButton.translatesAutoresizingMaskIntoConstraints = false
         header.addSubview(copyButton)
 
-        let closeBtn = NSButton(title: "×", target: self, action: #selector(dismiss))
+        let closeBtn = NSButton(title: "×", target: self, action: #selector(fullDismissPanel))
         closeBtn.bezelStyle = .inline
         closeBtn.isBordered = false
         closeBtn.font = NSFont.systemFont(ofSize: 15)
@@ -467,8 +485,15 @@ class AnswerPanel: NSPanel {
         inputField.stringValue = ""
         hideScreenshotPill()
 
-        let panelWidth: CGFloat = 400
-        let panelHeight: CGFloat = 500
+        // Load saved size
+        var panelWidth: CGFloat = 400
+        var panelHeight: CGFloat = 500
+        if let sizeSaved = UserDefaults.standard.dictionary(forKey: sizeKey),
+           let w = sizeSaved["w"] as? Double,
+           let h = sizeSaved["h"] as? Double {
+            panelWidth  = max(300, min(800, CGFloat(w)))
+            panelHeight = max(300, min(900, CGFloat(h)))
+        }
 
         // Use saved position if it's still on screen
         if let saved = UserDefaults.standard.dictionary(forKey: positionKey),
@@ -511,7 +536,7 @@ class AnswerPanel: NSPanel {
     private func setupKeyMonitors() {
         if escMonitor == nil {
             escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                if event.keyCode == 53 { DispatchQueue.main.async { self?.dismiss() } }
+                if event.keyCode == 53 { DispatchQueue.main.async { self?.onFullDismiss?() } }
             }
         }
         if cmdCMonitor == nil {
@@ -523,12 +548,18 @@ class AnswerPanel: NSPanel {
         }
     }
 
+    // Called by GhostWindow.fullDismiss() — removes key monitors and hides
     @objc func dismiss() {
         dismissTimer?.invalidate()
         dismissTimer = nil
         if let m = escMonitor  { NSEvent.removeMonitor(m); escMonitor  = nil }
         if let m = cmdCMonitor { NSEvent.removeMonitor(m); cmdCMonitor = nil }
         orderOut(nil)
+    }
+
+    // X button — fully close and clear content
+    @objc func fullDismissPanel() {
+        onFullDismiss?()
     }
 
     // MARK: - Screenshot pill
@@ -648,4 +679,5 @@ class AnswerPanel: NSPanel {
             self?.copyButton.contentTintColor = NSColor.white.withAlphaComponent(0.4)
         }
     }
+
 }

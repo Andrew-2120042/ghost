@@ -22,6 +22,7 @@
 		AA0000000000000000000026 /* AccessibilityViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000FB /* AccessibilityViewController.swift */; };
 		AA0000000000000000000027 /* ReadyViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000FC /* ReadyViewController.swift */; };
 		AA0000000000000000000028 /* KeychainManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000FD /* KeychainManager.swift */; };
+		AA0000000000000000000029 /* ClickCatcherView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000000000000000000000FE /* ClickCatcherView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -39,6 +40,7 @@
 		AA000000000000000000000FB /* AccessibilityViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccessibilityViewController.swift; sourceTree = "<group>"; };
 		AA000000000000000000000FC /* ReadyViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReadyViewController.swift; sourceTree = "<group>"; };
 		AA000000000000000000000FD /* KeychainManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainManager.swift; sourceTree = "<group>"; };
+		AA000000000000000000000FE /* ClickCatcherView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClickCatcherView.swift; sourceTree = "<group>"; };
 		AA000000000000000000000C /* Cocoa.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Cocoa.framework; path = System/Library/Frameworks/Cocoa.framework; sourceTree = SDKROOT; };
 		AA000000000000000000000D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AA000000000000000000000E /* Ghost.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Ghost.entitlements; sourceTree = "<group>"; };
@@ -74,6 +76,7 @@
 				AA000000000000000000000FB /* AccessibilityViewController.swift */,
 				AA000000000000000000000FC /* ReadyViewController.swift */,
 				AA000000000000000000000FD /* KeychainManager.swift */,
+				AA000000000000000000000FE /* ClickCatcherView.swift */,
 				AA000000000000000000000D /* Info.plist */,
 				AA000000000000000000000E /* Ghost.entitlements */,
 			);
@@ -182,6 +185,7 @@
 				AA0000000000000000000026 /* AccessibilityViewController.swift in Sources */,
 				AA0000000000000000000027 /* ReadyViewController.swift in Sources */,
 				AA0000000000000000000028 /* KeychainManager.swift in Sources */,
+				AA0000000000000000000029 /* ClickCatcherView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

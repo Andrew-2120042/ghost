@@ -14,14 +14,10 @@ final class GlobalHotkeyManager {
     func start() {
         print("Ghost: start() called, AXTrusted=\(AXIsProcessTrusted())")
         guard AXIsProcessTrusted() else {
-            print("Ghost: accessibility not granted — prompting and polling")
-            // Trigger macOS "wants to control this computer" dialog
+            print("Ghost: accessibility not granted — prompting via system dialog")
+            // Show macOS system dialog (only appears once; silent if already granted)
             let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             AXIsProcessTrustedWithOptions(opts as CFDictionary)
-            // Also show our own alert with a direct link to Settings
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NotificationCenter.default.post(name: NSNotification.Name("GhostNeedsAccessibility"), object: nil)
-            }
             registerLocalMonitor()
             startPermissionPolling()
             return

@@ -132,25 +132,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         setupMenuBar()
 
-        // Accessibility permission alert
-        NotificationCenter.default.addObserver(
-            forName: NSNotification.Name("GhostNeedsAccessibility"),
-            object: nil,
-            queue: .main
-        ) { _ in
-            let alert = NSAlert()
-            alert.messageText = "Accessibility Required for Hotkey"
-            alert.informativeText = "Ghost needs Accessibility access so Cmd+Shift+Space works from any app.\n\nSystem Settings → Privacy & Security → Accessibility → enable Ghost."
-            alert.addButton(withTitle: "Open Settings")
-            alert.addButton(withTitle: "Later")
-            NSApp.activate(ignoringOtherApps: true)
-            if alert.runModal() == .alertFirstButtonReturn {
-                NSWorkspace.shared.open(
-                    URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!
-                )
-            }
-        }
-
         // FIX 3: handle screen permission failure notification
         NotificationCenter.default.addObserver(
             forName: NSNotification.Name("GhostNeedsScreenPermission"),
@@ -180,6 +161,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if app.bundleIdentifier == Bundle.main.bundleIdentifier {
                     GlobalHotkeyManager.shared.restart()
                 }
+            }
+        }
+
+        // Panel hidden/restored — update menu bar icon
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("GhostPanelHidden"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let button = self?.statusItem?.button {
+                button.image = NSImage(systemSymbolName: "eye.slash.fill", accessibilityDescription: "Ghost — content waiting")
+                button.image?.isTemplate = true
+                button.toolTip = "Ghost — tap hotkey to restore"
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: NSNotification.Name("GhostPanelRestored"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            if let button = self?.statusItem?.button {
+                button.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: "Ghost")
+                button.image?.isTemplate = true
+                button.toolTip = "Ghost — Press Cmd+Shift+Space"
             }
         }
 

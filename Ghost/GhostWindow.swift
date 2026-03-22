@@ -5,16 +5,25 @@ enum GhostMode {
     case chat
 }
 
+enum GhostState {
+    case idle       // nothing showing
+    case selecting  // overlay active
+    case answering  // panel visible
+    case hidden     // panel exists, content preserved
+}
+
 class GhostWindow: NSPanel {
 
     var answerPanel: AnswerPanel?
     var currentScreenshot: NSImage?
     var currentMode: GhostMode = .screenshot
+    var state: GhostState = .idle
 
     private var escMonitor: Any?
     private var escMonitorLocal: Any?
     private var safetyTimer: Timer?
     private var deactivateObserver: Any?
+    var clickMonitor: Any?
 
     init() {
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -25,7 +34,7 @@ class GhostWindow: NSPanel {
             defer: false
         )
         self.level = .screenSaver
-        self.backgroundColor = NSColor.blue.withAlphaComponent(0.15)
+        self.backgroundColor = NSColor.clear
         self.isOpaque = false
         self.hasShadow = false
         self.ignoresMouseEvents = false
@@ -60,13 +69,29 @@ class GhostWindow: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
+    // MARK: - Activate
+
     func activate() {
+        switch state {
+        case .hidden:
+            restorePanel()
+            return
+        case .answering:
+            hidePanel()
+            return
+        case .selecting:
+            deactivate()
+            return
+        case .idle:
+            break
+        }
+
         print("Ghost: activate() called")
+        state = .selecting
 
         if answerPanel == nil {
             answerPanel = AnswerPanel()
 
-            // Wire up follow-up callback (set once, persists across activations)
             answerPanel?.onFollowUp = { [weak self] text, mode in
                 guard let self = self else { return }
 
@@ -95,6 +120,14 @@ class GhostWindow: NSPanel {
                     }
                 )
             }
+
+            answerPanel?.onHide = { [weak self] in
+                self?.hidePanel()
+            }
+
+            answerPanel?.onFullDismiss = { [weak self] in
+                self?.fullDismiss()
+            }
         }
 
         let screenFrame = NSScreen.main?.frame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -119,8 +152,9 @@ class GhostWindow: NSPanel {
                 self.answerPanel?.show(near: rect, onScreen: screen)
                 self.answerPanel?.showScreenshotPill()
                 self.deactivate()
+                self.state = .answering
+                self.showClickCatcher()
 
-                // show() already called startNewAssistantBubble() — stream straight in
                 AIManager.shared.query(
                     image: image,
                     prompt: "Answer this.",
@@ -146,6 +180,7 @@ class GhostWindow: NSPanel {
         self.contentView = selectionView
         self.makeFirstResponder(selectionView)
         self.orderFrontRegardless()
+        NSCursor.crosshair.push()
 
         escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == 53 { DispatchQueue.main.async { self?.deactivate() } }
@@ -173,6 +208,8 @@ class GhostWindow: NSPanel {
         }
     }
 
+    // MARK: - Deactivate (selection overlay only)
+
     func deactivate() {
         safetyTimer?.invalidate()
         safetyTimer = nil
@@ -183,7 +220,68 @@ class GhostWindow: NSPanel {
         }
         if let monitor = escMonitor     { NSEvent.removeMonitor(monitor); escMonitor     = nil }
         if let monitor = escMonitorLocal { NSEvent.removeMonitor(monitor); escMonitorLocal = nil }
+        NSCursor.pop()
         self.contentView = nil
         self.orderOut(nil)
+
+        if state == .selecting { state = .idle }
+    }
+
+    // MARK: - Hide (preserve content)
+
+    func hidePanel() {
+        guard state == .answering else { return }
+        answerPanel?.orderOut(nil)
+        removeClickCatcher()
+        state = .hidden
+        NotificationCenter.default.post(name: NSNotification.Name("GhostPanelHidden"), object: nil)
+        print("Ghost: panel hidden — content preserved")
+    }
+
+    // MARK: - Restore
+
+    func restorePanel() {
+        guard state == .hidden else { return }
+        guard let panel = answerPanel else {
+            state = .idle
+            activate()
+            return
+        }
+        panel.orderFrontRegardless()
+        showClickCatcher()
+        state = .answering
+        NotificationCenter.default.post(name: NSNotification.Name("GhostPanelRestored"), object: nil)
+        print("Ghost: panel restored with preserved content")
+    }
+
+    // MARK: - Full dismiss (clear content)
+
+    func fullDismiss() {
+        answerPanel?.dismiss()
+        removeClickCatcher()
+        currentScreenshot = nil
+        AIManager.shared.clearHistory()
+        state = .idle
+        NotificationCenter.default.post(name: NSNotification.Name("GhostPanelRestored"), object: nil)
+        print("Ghost: full dismiss — content cleared")
+    }
+
+    // MARK: - Click catcher (global monitor — observes without consuming)
+
+    func showClickCatcher() {
+        guard clickMonitor == nil else { return }
+        clickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            guard let self = self, let panel = self.answerPanel else { return }
+            let screenPoint = NSEvent.mouseLocation
+            if !panel.frame.contains(screenPoint) {
+                DispatchQueue.main.async { self.hidePanel() }
+            }
+        }
+    }
+
+    func removeClickCatcher() {
+        if let m = clickMonitor { NSEvent.removeMonitor(m); clickMonitor = nil }
     }
 }
