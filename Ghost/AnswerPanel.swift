@@ -41,6 +41,11 @@ private class DragHandleView: NSView {
     override func mouseDragged(with event: NSEvent) {
         window?.performDrag(with: event)
     }
+    override func mouseUp(with event: NSEvent) {
+        if let origin = window?.frame.origin, let panel = window as? AnswerPanel {
+            panel.savePositionPublic(origin)
+        }
+    }
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .openHand)
     }
@@ -61,7 +66,7 @@ class AnswerPanel: NSPanel {
     private var pillHeightConstraint: NSLayoutConstraint!
 
     // MARK: - State
-    private let positionKey = "ghost.panel.position"
+    let positionKey = "ghost.panel.position"
     private var dismissTimer: Timer?
     private var escMonitor: Any?
     private var cmdCMonitor: Any?
@@ -101,14 +106,18 @@ class AnswerPanel: NSPanel {
 
     override func setFrameOrigin(_ point: NSPoint) {
         super.setFrameOrigin(point)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            guard let self = self else { return }
-            let origin = self.frame.origin
-            UserDefaults.standard.set(
-                ["x": Double(origin.x), "y": Double(origin.y)],
-                forKey: self.positionKey
-            )
-        }
+    }
+
+    private func savePosition(_ origin: NSPoint) {
+        UserDefaults.standard.set(
+            ["x": Double(origin.x), "y": Double(origin.y)],
+            forKey: positionKey
+        )
+    }
+
+    func savePositionPublic(_ origin: NSPoint) {
+        savePosition(origin)
+        print("Ghost: panel position saved \(origin)")
     }
 
     // MARK: - UI Setup
@@ -465,11 +474,10 @@ class AnswerPanel: NSPanel {
         if let saved = UserDefaults.standard.dictionary(forKey: positionKey),
            let sx = saved["x"] as? Double,
            let sy = saved["y"] as? Double {
-            let savedRect = NSRect(x: sx, y: sy, width: panelWidth, height: panelHeight)
+            let savedOrigin = NSPoint(x: sx, y: sy)
+            let savedRect = NSRect(origin: savedOrigin, size: NSSize(width: panelWidth, height: panelHeight))
             if screen.frame.intersects(savedRect) {
-                setFrameOrigin(NSPoint(x: sx, y: sy))
-                // Don't re-save on show — only on actual drag
-                super.setFrame(NSRect(x: sx, y: sy, width: panelWidth, height: panelHeight), display: false)
+                super.setFrame(savedRect, display: false)
                 orderFrontRegardless()
                 updateModeUI()
                 startNewAssistantBubble()
