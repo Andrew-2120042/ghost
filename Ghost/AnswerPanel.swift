@@ -24,6 +24,32 @@ class ReturnTextField: NSTextField, NSTextFieldDelegate {
         }
         return false
     }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let cmd = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+        guard cmd else { return super.performKeyEquivalent(with: event) }
+        switch event.keyCode {
+        case 9: return NSApp.sendAction(#selector(NSText.paste(_:)),      to: currentEditor(), from: self)
+        case 8: return NSApp.sendAction(#selector(NSText.copy(_:)),       to: currentEditor(), from: self)
+        case 7: return NSApp.sendAction(#selector(NSText.cut(_:)),        to: currentEditor(), from: self)
+        case 0: return NSApp.sendAction(#selector(NSText.selectAll(_:)),  to: currentEditor(), from: self)
+        default: return super.performKeyEquivalent(with: event)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        window?.makeKey()
+        super.mouseDown(with: event)
+    }
+}
+
+// MARK: - Selectable answer bubble label (makes panel key on click)
+
+private class SelectableLabel: NSTextField {
+    override func mouseDown(with event: NSEvent) {
+        window?.makeKey()
+        super.mouseDown(with: event)
+    }
 }
 
 // MARK: - Flipped container (top-to-bottom scroll layout)
@@ -411,7 +437,9 @@ class AnswerPanel: NSPanel {
 
     @discardableResult
     private func addBubble(text: String, role: String) -> NSTextField {
-        let label = NSTextField(labelWithString: text)
+        let label: NSTextField = role == "assistant"
+            ? SelectableLabel(labelWithString: text)
+            : NSTextField(labelWithString: text)
         label.font = NSFont.systemFont(ofSize: 14)
         label.textColor = .white
         label.lineBreakMode = .byWordWrapping
@@ -571,8 +599,9 @@ class AnswerPanel: NSPanel {
     private func setupKeyMonitors() {
         if cmdCMonitor == nil {
             cmdCMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self = self, self.isVisible else { return }
                 if event.keyCode == 8 && event.modifierFlags.contains(.command) {
-                    DispatchQueue.main.async { self?.copyAnswer() }
+                    DispatchQueue.main.async { self.copyAnswer() }
                 }
             }
         }
