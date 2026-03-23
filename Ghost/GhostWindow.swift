@@ -12,6 +12,33 @@ enum GhostState {
     case hidden     // panel exists, content preserved
 }
 
+// Top-level C-compatible callback for the ESC event tap.
+// Must be a free function — Swift closures that create inner closures
+// (e.g. DispatchQueue.main.async) cannot reliably be used as @convention(c)
+// callbacks for CGEvent.tapCreate.
+private func ghostEscEventTapCallback(
+    proxy: CGEventTapProxy,
+    type: CGEventType,
+    event: CGEvent,
+    userInfo: UnsafeMutableRawPointer?
+) -> Unmanaged<CGEvent>? {
+    guard let userInfo = userInfo else {
+        return Unmanaged.passUnretained(event)
+    }
+    let window = Unmanaged<GhostWindow>.fromOpaque(userInfo).takeUnretainedValue()
+    if event.getIntegerValueField(.keyboardEventKeycode) == 53 {
+        DispatchQueue.main.async {
+            switch window.state {
+            case .answering: window.fullDismiss()
+            case .selecting: window.deactivate()
+            default: break
+            }
+        }
+        return nil  // consumed — Safari never sees this ESC
+    }
+    return Unmanaged.passUnretained(event)
+}
+
 class GhostWindow: NSPanel {
 
     var answerPanel: AnswerPanel?
@@ -19,8 +46,8 @@ class GhostWindow: NSPanel {
     var currentMode: GhostMode = .screenshot
     var state: GhostState = .idle
 
-    private var escMonitor: Any?
-    private var escMonitorLocal: Any?
+    private var escEventTap: CFMachPort?
+    private var escRunLoopSource: CFRunLoopSource?
     private var safetyTimer: Timer?
     private var deactivateObserver: Any?
     var clickMonitor: Any?
@@ -88,6 +115,7 @@ class GhostWindow: NSPanel {
 
         print("Ghost: activate() called")
         state = .selecting
+        startEscConsumer()
 
         if answerPanel == nil {
             answerPanel = AnswerPanel()
@@ -159,6 +187,7 @@ class GhostWindow: NSPanel {
                 self.answerPanel?.showScreenshotPill()
                 self.deactivate()
                 self.state = .answering
+                self.startEscConsumer()
                 self.showClickCatcher()
 
                 // Capture this query's bubble so finalizeStreamingBubble()
@@ -199,18 +228,6 @@ class GhostWindow: NSPanel {
         self.orderFrontRegardless()
         NSCursor.crosshair.push()
 
-        escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 { DispatchQueue.main.async { self?.deactivate() } }
-        }
-
-        escMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if event.keyCode == 53 {
-                DispatchQueue.main.async { self?.deactivate() }
-                return nil
-            }
-            return event
-        }
-
         deactivateObserver = NotificationCenter.default.addObserver(
             forName: NSNotification.Name("GhostDeactivate"),
             object: nil,
@@ -235,8 +252,7 @@ class GhostWindow: NSPanel {
             NotificationCenter.default.removeObserver(observer)
             deactivateObserver = nil
         }
-        if let monitor = escMonitor     { NSEvent.removeMonitor(monitor); escMonitor     = nil }
-        if let monitor = escMonitorLocal { NSEvent.removeMonitor(monitor); escMonitorLocal = nil }
+        stopEscConsumer()
         NSCursor.pop()
         self.contentView = nil
         self.orderOut(nil)
@@ -250,6 +266,7 @@ class GhostWindow: NSPanel {
         guard state == .answering else { return }
         answerPanel?.orderOut(nil)
         removeClickCatcher()
+        stopEscConsumer()
         state = .hidden
         NotificationCenter.default.post(name: NSNotification.Name("GhostPanelHidden"), object: nil)
         print("Ghost: panel hidden — content preserved")
@@ -266,6 +283,7 @@ class GhostWindow: NSPanel {
         }
         panel.orderFrontRegardless()
         showClickCatcher()
+        startEscConsumer()
         state = .answering
         NotificationCenter.default.post(name: NSNotification.Name("GhostPanelRestored"), object: nil)
         print("Ghost: panel restored with preserved content")
@@ -276,11 +294,49 @@ class GhostWindow: NSPanel {
     func fullDismiss() {
         answerPanel?.dismiss()
         removeClickCatcher()
+        stopEscConsumer()
         currentScreenshot = nil
         AIManager.shared.clearHistory()
         state = .idle
         NotificationCenter.default.post(name: NSNotification.Name("GhostPanelRestored"), object: nil)
         print("Ghost: full dismiss — content cleared")
+    }
+
+    // MARK: - ESC consumer (CGEvent tap — consumes ESC before Safari sees it)
+
+    func startEscConsumer() {
+        guard escEventTap == nil else { return }
+        let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
+        escEventTap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: mask,
+            callback: ghostEscEventTapCallback,
+            userInfo: Unmanaged.passUnretained(self).toOpaque()
+        )
+        guard let tap = escEventTap else {
+            print("Ghost: ESC consumer tap failed")
+            return
+        }
+        let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
+        escRunLoopSource = source
+        CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
+        CGEvent.tapEnable(tap: tap, enable: true)
+        print("Ghost: ESC consumer active")
+    }
+
+    func stopEscConsumer() {
+        if let tap = escEventTap {
+            CGEvent.tapEnable(tap: tap, enable: false)
+            CFMachPortInvalidate(tap)
+            escEventTap = nil
+        }
+        if let source = escRunLoopSource {
+            CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
+            escRunLoopSource = nil
+        }
+        print("Ghost: ESC consumer stopped")
     }
 
     // MARK: - Click catcher (global monitor — observes without consuming)

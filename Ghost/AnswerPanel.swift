@@ -70,7 +70,6 @@ class AnswerPanel: NSPanel {
     let positionKey = "ghost.panel.position"
     let sizeKey     = "ghost.panel.size"
     private var dismissTimer: Timer?
-    private var escMonitor: Any?
     private var cmdCMonitor: Any?
     private var screenshotAssistantTexts: [String] = []
     private var chatAssistantTexts: [String] = []
@@ -418,23 +417,28 @@ class AnswerPanel: NSPanel {
         label.lineBreakMode = .byWordWrapping
         label.maximumNumberOfLines = 0
         label.preferredMaxLayoutWidth = 320
+        if role == "assistant" {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            label.alignment = .justified
+        }
         label.isSelectable = true
         label.translatesAutoresizingMaskIntoConstraints = false
 
         let container = NSView()
         container.wantsLayer = true
-        container.layer?.cornerRadius = 10
-        container.layer?.backgroundColor = (role == "assistant")
-            ? NSColor.white.withAlphaComponent(0.08).cgColor
-            : NSColor.systemBlue.withAlphaComponent(0.25).cgColor
+        if role == "user" {
+            container.layer?.cornerRadius = 10
+            container.layer?.backgroundColor = NSColor.systemBlue.withAlphaComponent(0.25).cgColor
+        }
         container.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(label)
 
+        let hPad: CGFloat = role == "assistant" ? 16 : 10
         NSLayoutConstraint.activate([
             label.topAnchor.constraint(equalTo: container.topAnchor, constant: 10),
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -10),
-            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 10),
-            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -10),
+            label.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: hPad),
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -hPad),
         ])
 
         if role == "user" {
@@ -451,7 +455,7 @@ class AnswerPanel: NSPanel {
             wrapper.widthAnchor.constraint(equalTo: activeStack.widthAnchor, constant: -24).isActive = true
         } else {
             activeStack.addArrangedSubview(container)
-            container.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
+            container.widthAnchor.constraint(equalTo: activeStack.widthAnchor).isActive = true
         }
 
         scrollToBottom()
@@ -565,11 +569,6 @@ class AnswerPanel: NSPanel {
     }
 
     private func setupKeyMonitors() {
-        if escMonitor == nil {
-            escMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                if event.keyCode == 53 { DispatchQueue.main.async { self?.onFullDismiss?() } }
-            }
-        }
         if cmdCMonitor == nil {
             cmdCMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
                 if event.keyCode == 8 && event.modifierFlags.contains(.command) {
@@ -582,7 +581,6 @@ class AnswerPanel: NSPanel {
     @objc func dismiss() {
         dismissTimer?.invalidate()
         dismissTimer = nil
-        if let m = escMonitor  { NSEvent.removeMonitor(m); escMonitor  = nil }
         if let m = cmdCMonitor { NSEvent.removeMonitor(m); cmdCMonitor = nil }
         orderOut(nil)
     }
