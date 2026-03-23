@@ -57,7 +57,8 @@ class AnswerPanel: NSPanel {
 
     // MARK: - UI references
     private var scrollView: NSScrollView!
-    private var contentStack: NSStackView!
+    private var screenshotStack: NSStackView!
+    private var chatStack: NSStackView!
     private var inputField: ReturnTextField!
     private(set) var copyButton: NSButton!
     private var modePhotoBtn: NSButton!
@@ -71,7 +72,8 @@ class AnswerPanel: NSPanel {
     private var dismissTimer: Timer?
     private var escMonitor: Any?
     private var cmdCMonitor: Any?
-    private var assistantTexts: [String] = []
+    private var screenshotAssistantTexts: [String] = []
+    private var chatAssistantTexts: [String] = []
 
     var currentStreamingBubble: NSTextField?
     var onFollowUp: ((String, GhostMode) -> Void)?
@@ -80,6 +82,18 @@ class AnswerPanel: NSPanel {
 
     var currentMode: GhostMode = .screenshot {
         didSet { updateModeUI() }
+    }
+
+    private var activeStack: NSStackView {
+        currentMode == .screenshot ? screenshotStack : chatStack
+    }
+
+    private var activeAssistantTexts: [String] {
+        get { currentMode == .screenshot ? screenshotAssistantTexts : chatAssistantTexts }
+        set {
+            if currentMode == .screenshot { screenshotAssistantTexts = newValue }
+            else { chatAssistantTexts = newValue }
+        }
     }
 
     // MARK: - Init
@@ -103,8 +117,6 @@ class AnswerPanel: NSPanel {
         setupUI()
     }
 
-    // canBecomeKey = true so the input field can receive keyboard events
-    // nonactivatingPanel style prevents Ghost from stealing app focus
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override var isMovable: Bool { get { true } set { } }
@@ -135,7 +147,6 @@ class AnswerPanel: NSPanel {
             ["w": Double(size.width), "h": Double(size.height)],
             forKey: sizeKey
         )
-        print("Ghost: panel size saved \(size)")
     }
 
     // MARK: - UI Setup
@@ -157,7 +168,6 @@ class AnswerPanel: NSPanel {
         header.translatesAutoresizingMaskIntoConstraints = false
         vfx.addSubview(header)
 
-        // Drag handle — added first so buttons sit on top of it
         let dragHandle = DragHandleView()
         dragHandle.wantsLayer = true
         dragHandle.layer?.backgroundColor = CGColor.clear
@@ -189,8 +199,6 @@ class AnswerPanel: NSPanel {
         header.addSubview(closeBtn)
 
         let separator = NSView()
-        separator.wantsLayer = true
-        separator.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.1).cgColor
         separator.translatesAutoresizingMaskIntoConstraints = false
         vfx.addSubview(separator)
 
@@ -231,18 +239,31 @@ class AnswerPanel: NSPanel {
         flipView.translatesAutoresizingMaskIntoConstraints = false
         scrollView.documentView = flipView
 
-        contentStack = NSStackView()
-        contentStack.orientation = .vertical
-        contentStack.spacing = 10
-        contentStack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
-        contentStack.alignment = .leading
-        contentStack.translatesAutoresizingMaskIntoConstraints = false
-        flipView.addSubview(contentStack)
+        // Parent stack holds both mode stacks
+        screenshotStack = NSStackView()
+        screenshotStack.orientation = .vertical
+        screenshotStack.spacing = 10
+        screenshotStack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        screenshotStack.alignment = .leading
+        screenshotStack.translatesAutoresizingMaskIntoConstraints = false
+
+        chatStack = NSStackView()
+        chatStack.orientation = .vertical
+        chatStack.spacing = 10
+        chatStack.edgeInsets = NSEdgeInsets(top: 12, left: 12, bottom: 12, right: 12)
+        chatStack.alignment = .leading
+        chatStack.isHidden = true
+        chatStack.translatesAutoresizingMaskIntoConstraints = false
+
+        let parentStack = NSStackView(views: [screenshotStack, chatStack])
+        parentStack.orientation = .vertical
+        parentStack.spacing = 0
+        parentStack.alignment = .leading
+        parentStack.translatesAutoresizingMaskIntoConstraints = false
+        flipView.addSubview(parentStack)
 
         // ── INPUT ROW ─────────────────────────────────────────────────────────
         let inputRow = NSView()
-        inputRow.wantsLayer = true
-        inputRow.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.05).cgColor
         inputRow.translatesAutoresizingMaskIntoConstraints = false
         vfx.addSubview(inputRow)
 
@@ -321,7 +342,7 @@ class AnswerPanel: NSPanel {
             separator.trailingAnchor.constraint(equalTo: vfx.trailingAnchor),
             separator.heightAnchor.constraint(equalToConstant: 0.5),
 
-            // Screenshot pill (height = 0 when hidden, 48 when shown)
+            // Screenshot pill
             screenshotPill.topAnchor.constraint(equalTo: separator.bottomAnchor),
             screenshotPill.leadingAnchor.constraint(equalTo: vfx.leadingAnchor, constant: 12),
             screenshotPill.trailingAnchor.constraint(equalTo: vfx.trailingAnchor, constant: -12),
@@ -369,17 +390,21 @@ class AnswerPanel: NSPanel {
             scrollView.trailingAnchor.constraint(equalTo: vfx.trailingAnchor),
             scrollView.bottomAnchor.constraint(equalTo: inputRow.topAnchor),
 
-            // FlippedView = document view, pinned width to scroll view
+            // FlippedView pinned width to scroll view
             flipView.topAnchor.constraint(equalTo: scrollView.contentView.topAnchor),
             flipView.leadingAnchor.constraint(equalTo: scrollView.contentView.leadingAnchor),
             flipView.widthAnchor.constraint(equalTo: scrollView.widthAnchor),
 
-            // ContentStack fills flipView
-            contentStack.topAnchor.constraint(equalTo: flipView.topAnchor),
-            contentStack.leadingAnchor.constraint(equalTo: flipView.leadingAnchor),
-            contentStack.trailingAnchor.constraint(equalTo: flipView.trailingAnchor),
-            contentStack.bottomAnchor.constraint(equalTo: flipView.bottomAnchor),
-            contentStack.widthAnchor.constraint(equalTo: flipView.widthAnchor),
+            // Parent stack fills flipView
+            parentStack.topAnchor.constraint(equalTo: flipView.topAnchor),
+            parentStack.leadingAnchor.constraint(equalTo: flipView.leadingAnchor),
+            parentStack.trailingAnchor.constraint(equalTo: flipView.trailingAnchor),
+            parentStack.bottomAnchor.constraint(equalTo: flipView.bottomAnchor),
+            parentStack.widthAnchor.constraint(equalTo: flipView.widthAnchor),
+
+            // Each stack fills full width
+            screenshotStack.widthAnchor.constraint(equalTo: parentStack.widthAnchor),
+            chatStack.widthAnchor.constraint(equalTo: parentStack.widthAnchor),
         ])
     }
 
@@ -413,7 +438,6 @@ class AnswerPanel: NSPanel {
         ])
 
         if role == "user" {
-            // Right-aligned: wrap in a full-width view, bubble sits on the right
             let wrapper = NSView()
             wrapper.translatesAutoresizingMaskIntoConstraints = false
             wrapper.addSubview(container)
@@ -423,10 +447,10 @@ class AnswerPanel: NSPanel {
                 container.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
                 container.widthAnchor.constraint(lessThanOrEqualToConstant: 320),
             ])
-            contentStack.addArrangedSubview(wrapper)
-            wrapper.widthAnchor.constraint(equalTo: contentStack.widthAnchor, constant: -24).isActive = true
+            activeStack.addArrangedSubview(wrapper)
+            wrapper.widthAnchor.constraint(equalTo: activeStack.widthAnchor, constant: -24).isActive = true
         } else {
-            contentStack.addArrangedSubview(container)
+            activeStack.addArrangedSubview(container)
             container.widthAnchor.constraint(lessThanOrEqualToConstant: 360).isActive = true
         }
 
@@ -436,21 +460,27 @@ class AnswerPanel: NSPanel {
 
     func startNewAssistantBubble() {
         currentStreamingBubble = addBubble(text: "", role: "assistant")
+        print("🔵 bubble created in \(currentMode == .screenshot ? "screenshotStack" : "chatStack")")
+        print("🔵 currentStreamingBubble set: \(currentStreamingBubble != nil)")
     }
 
     func appendStreamingText(_ text: String) {
+        print("🔵 appendStreamingText called, chunk='\(text.prefix(30))', bubble=\(currentStreamingBubble != nil ? "EXISTS" : "NIL")")
         DispatchQueue.main.async {
-            guard let bubble = self.currentStreamingBubble else { return }
+            guard let bubble = self.currentStreamingBubble else {
+                print("🔵 appendStreamingText: bubble is NIL, dropping chunk")
+                return
+            }
             bubble.stringValue += text
             bubble.invalidateIntrinsicContentSize()
-            self.contentStack.needsLayout = true
+            self.activeStack.needsLayout = true
             self.scrollToBottom()
         }
     }
 
     func finalizeStreamingBubble() {
         if let text = currentStreamingBubble?.stringValue, !text.isEmpty {
-            assistantTexts.append(text)
+            activeAssistantTexts.append(text)
         }
         currentStreamingBubble = nil
     }
@@ -461,29 +491,35 @@ class AnswerPanel: NSPanel {
 
     func scrollToBottom() {
         DispatchQueue.main.async {
-            self.scrollView.layoutSubtreeIfNeeded()
-            guard let docView = self.scrollView.documentView else { return }
-            let docHeight = docView.frame.height
-            let clipHeight = self.scrollView.contentView.bounds.height
-            let y = max(0, docHeight - clipHeight)
-            self.scrollView.contentView.scroll(to: NSPoint(x: 0, y: y))
-            self.scrollView.reflectScrolledClipView(self.scrollView.contentView)
+            let point = NSPoint(
+                x: 0,
+                y: max(0, (self.scrollView.documentView?.frame.height ?? 0) - self.scrollView.frame.height)
+            )
+            self.scrollView.documentView?.scroll(point)
         }
     }
 
-    // Legacy compatibility
     func appendText(_ text: String) { appendStreamingText(text) }
-    func startDismissTimer() { /* no auto-dismiss in chat mode */ }
+    func startDismissTimer() {}
 
     // MARK: - Show / Dismiss
 
     func show(near rect: NSRect, onScreen screen: NSScreen) {
-        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        print("🔵 show() called, resetting stacks")
+        // Clear both stacks for fresh session
+        screenshotStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        chatStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         currentStreamingBubble = nil
-        assistantTexts = []
-        currentMode = .screenshot
+        screenshotAssistantTexts = []
+        chatAssistantTexts = []
         inputField.stringValue = ""
         hideScreenshotPill()
+
+        // Start in screenshot mode
+        screenshotStack.isHidden = false
+        chatStack.isHidden = true
+        currentMode = .screenshot
+        updateModeUI()
 
         // Load saved size
         var panelWidth: CGFloat = 400
@@ -495,7 +531,7 @@ class AnswerPanel: NSPanel {
             panelHeight = max(300, min(900, CGFloat(h)))
         }
 
-        // Use saved position if it's still on screen
+        // Use saved position if still on screen
         if let saved = UserDefaults.standard.dictionary(forKey: positionKey),
            let sx = saved["x"] as? Double,
            let sy = saved["y"] as? Double {
@@ -504,7 +540,6 @@ class AnswerPanel: NSPanel {
             if screen.frame.intersects(savedRect) {
                 super.setFrame(savedRect, display: false)
                 orderFrontRegardless()
-                updateModeUI()
                 startNewAssistantBubble()
                 setupKeyMonitors()
                 return
@@ -525,11 +560,7 @@ class AnswerPanel: NSPanel {
 
         setFrame(NSRect(x: x, y: y, width: panelWidth, height: panelHeight), display: false)
         orderFrontRegardless()
-
-        // Start a bubble ready for the first streaming response
-        updateModeUI()
         startNewAssistantBubble()
-
         setupKeyMonitors()
     }
 
@@ -548,7 +579,6 @@ class AnswerPanel: NSPanel {
         }
     }
 
-    // Called by GhostWindow.fullDismiss() — removes key monitors and hides
     @objc func dismiss() {
         dismissTimer?.invalidate()
         dismissTimer = nil
@@ -557,7 +587,6 @@ class AnswerPanel: NSPanel {
         orderOut(nil)
     }
 
-    // X button — fully close and clear content
     @objc func fullDismissPanel() {
         onFullDismiss?()
     }
@@ -588,21 +617,41 @@ class AnswerPanel: NSPanel {
     @objc func switchToScreenshotMode() {
         guard currentMode != .screenshot else { return }
         currentMode = .screenshot
-        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        chatStack.isHidden = true
+        screenshotStack.isHidden = false
+
         AIManager.shared.clearHistory()
-        addSeparator("— Screenshot mode —")
         NotificationCenter.default.post(name: NSNotification.Name("GhostCheckScreenshot"), object: nil)
+        inputField.placeholderString = "Ask a follow-up..."
         updateModeUI()
+
+        if !screenshotStack.arrangedSubviews.isEmpty {
+            addSeparatorToStack(screenshotStack, text: "— Screenshot mode —")
+        }
+
+        scrollToBottom()
     }
 
     @objc func switchToChatMode() {
         guard currentMode != .chat else { return }
         currentMode = .chat
-        contentStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        screenshotStack.isHidden = true
+        chatStack.isHidden = false
+
+        print("🔵 switched to chat, chatStack.isHidden=\(chatStack.isHidden), screenshotStack.isHidden=\(screenshotStack.isHidden)")
+
         AIManager.shared.clearHistory()
-        addSeparator("— Chat mode —")
         hideScreenshotPill()
+        inputField.placeholderString = "Ask anything..."
         updateModeUI()
+
+        if chatStack.arrangedSubviews.isEmpty {
+            addSeparatorToStack(chatStack, text: "— Chat mode —")
+        }
+
+        scrollToBottom()
     }
 
     func updateModeUI() {
@@ -610,17 +659,19 @@ class AnswerPanel: NSPanel {
         case .screenshot:
             modePhotoBtn.contentTintColor = .systemBlue
             modeChatBtn.contentTintColor  = NSColor.white.withAlphaComponent(0.3)
-            inputField.placeholderString  = "Ask a follow-up..."
         case .chat:
             modeChatBtn.contentTintColor  = .systemBlue
             modePhotoBtn.contentTintColor = NSColor.white.withAlphaComponent(0.3)
-            inputField.placeholderString  = "Ask anything..."
         }
     }
 
-    // MARK: - Separator label
+    // MARK: - Separator
 
     func addSeparator(_ text: String) {
+        addSeparatorToStack(activeStack, text: text)
+    }
+
+    func addSeparatorToStack(_ stack: NSStackView, text: String) {
         let container = NSView()
         container.translatesAutoresizingMaskIntoConstraints = false
 
@@ -639,27 +690,31 @@ class AnswerPanel: NSPanel {
             container.heightAnchor.constraint(equalToConstant: 24),
         ])
 
-        contentStack.addArrangedSubview(container)
+        stack.addArrangedSubview(container)
         scrollToBottom()
     }
 
     // MARK: - Send message
 
     @objc func sendMessage() {
+        print("🔵 sendMessage called, text='\(inputField.stringValue)', mode=\(currentMode)")
         let text = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         addUserBubble(text)
         inputField.stringValue = ""
+        print("🔵 startNewAssistantBubble called, activeStack=\(currentMode == .screenshot ? "screenshot" : "chat"), chatHidden=\(chatStack.isHidden)")
         startNewAssistantBubble()
         dismissTimer?.invalidate()
+        print("Ghost: firing onFollowUp, onFollowUp isNil=\(onFollowUp == nil)")
         onFollowUp?(text, currentMode)
     }
 
     // MARK: - Copy answer
 
     @objc func copyAnswer() {
+        let texts = activeAssistantTexts
         let text: String
-        if let last = assistantTexts.last, !last.isEmpty {
+        if let last = texts.last, !last.isEmpty {
             text = last
         } else if let streaming = currentStreamingBubble?.stringValue, !streaming.isEmpty {
             text = streaming
@@ -679,5 +734,4 @@ class AnswerPanel: NSPanel {
             self?.copyButton.contentTintColor = NSColor.white.withAlphaComponent(0.4)
         }
     }
-
 }

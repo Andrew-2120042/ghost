@@ -93,13 +93,12 @@ class GhostWindow: NSPanel {
             answerPanel = AnswerPanel()
 
             answerPanel?.onFollowUp = { [weak self] text, mode in
-                guard let self = self else { return }
-
-                AIManager.shared.conversationHistory.append(
-                    ChatMessage(role: "user", content: text)
-                )
-
+                print("🟡 onFollowUp fired, mode=\(mode), image=\(((mode == .screenshot) ? self?.currentScreenshot : nil) == nil ? "nil" : "present")")
+                guard let self = self else { print("Ghost: self is nil!"); return }
                 let image: NSImage? = (mode == .screenshot) ? self.currentScreenshot : nil
+                print("🟡 calling query, prompt='\(text)'")
+
+                let followUpBubble = self.answerPanel?.currentStreamingBubble
 
                 AIManager.shared.query(
                     image: image,
@@ -108,7 +107,12 @@ class GhostWindow: NSPanel {
                         self?.answerPanel?.appendStreamingText(chunk)
                     },
                     onComplete: { [weak self] fullText in
-                        self?.answerPanel?.finalizeStreamingBubble()
+                        if self?.answerPanel?.currentStreamingBubble === followUpBubble {
+                            self?.answerPanel?.finalizeStreamingBubble()
+                        }
+                        AIManager.shared.conversationHistory.append(
+                            ChatMessage(role: "user", content: text)
+                        )
                         AIManager.shared.conversationHistory.append(
                             ChatMessage(role: "assistant", content: fullText)
                         )
@@ -116,7 +120,9 @@ class GhostWindow: NSPanel {
                     onError: { [weak self] error in
                         print("Ghost: follow-up error = \(error)")
                         self?.answerPanel?.appendStreamingText("⚠️ \(error)")
-                        self?.answerPanel?.finalizeStreamingBubble()
+                        if self?.answerPanel?.currentStreamingBubble === followUpBubble {
+                            self?.answerPanel?.finalizeStreamingBubble()
+                        }
                     }
                 )
             }
@@ -155,6 +161,10 @@ class GhostWindow: NSPanel {
                 self.state = .answering
                 self.showClickCatcher()
 
+                // Capture this query's bubble so finalizeStreamingBubble()
+                // doesn't nil a chat bubble if user switches modes mid-stream.
+                let screenshotBubble = self.answerPanel?.currentStreamingBubble
+
                 AIManager.shared.query(
                     image: image,
                     prompt: "Answer this.",
@@ -163,7 +173,12 @@ class GhostWindow: NSPanel {
                     },
                     onComplete: { [weak self] fullText in
                         print("Ghost: answer complete")
-                        self?.answerPanel?.finalizeStreamingBubble()
+                        if self?.answerPanel?.currentStreamingBubble === screenshotBubble {
+                            self?.answerPanel?.finalizeStreamingBubble()
+                        }
+                        AIManager.shared.conversationHistory.append(
+                            ChatMessage(role: "user", content: "Answer this.")
+                        )
                         AIManager.shared.conversationHistory.append(
                             ChatMessage(role: "assistant", content: fullText)
                         )
@@ -171,7 +186,9 @@ class GhostWindow: NSPanel {
                     onError: { [weak self] error in
                         print("Ghost: error = \(error)")
                         self?.answerPanel?.appendStreamingText("⚠️ \(error)")
-                        self?.answerPanel?.finalizeStreamingBubble()
+                        if self?.answerPanel?.currentStreamingBubble === screenshotBubble {
+                            self?.answerPanel?.finalizeStreamingBubble()
+                        }
                     }
                 )
             }

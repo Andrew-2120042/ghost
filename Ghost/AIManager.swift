@@ -32,9 +32,10 @@ final class AIManager {
                onComplete: @escaping (String) -> Void,
                onError: @escaping (String) -> Void) {
 
-        print("Ghost: query() called")
+        print("🟢 AIManager.query called, image=\(image == nil ? "nil" : "present"), prompt='\(prompt)'")
         print("Ghost: licenseKey = '\(licenseKey)'")
         print("Ghost: serverURL = \(serverURL)")
+        print("Ghost: history count = \(conversationHistory.count)")
         guard !licenseKey.isEmpty else {
             onError("No license key")
             return
@@ -135,7 +136,8 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
                     didReceive data: Data) {
         guard let text = String(data: data, encoding: .utf8) else { return }
 
-        print("Ghost: raw server data = \(text)")
+        print("🟢 SSE data received: \(text.prefix(100))")
+        print("Ghost: raw server data = \(text.prefix(200))")
 
         // Handle raw JSON error responses (non-SSE, e.g. 401/402 before SSE headers)
         if text.hasPrefix("{"), let jsonData = text.data(using: .utf8),
