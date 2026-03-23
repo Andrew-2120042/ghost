@@ -14,17 +14,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupAppIcon() // FIX 1: set icon before anything else
 
-        // Dev reset: Cmd+Shift+D clears onboarding state
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if event.modifierFlags.contains([.command, .shift])
-               && event.charactersIgnoringModifiers == "d" {
-                UserDefaults.standard.removeObject(forKey: "ghost.onboarding.complete")
-                KeychainManager.shared.delete(service: "com.ghost.app.license")
-                print("Ghost: onboarding reset — relaunch to see onboarding")
-            }
-            return event
-        }
-
         if OnboardingState.isComplete {
             finishLaunch()
         } else {
@@ -99,22 +88,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Post-onboarding launch
 
     func finishLaunch() {
-        print("Ghost: finishLaunch() called")
-
         // FIX 2: clear old keychain items that may cause password popup
         if !UserDefaults.standard.bool(forKey: "ghost.keychain.migrated") {
             KeychainManager.shared.delete(service: "com.ghost.app.license")
             UserDefaults.standard.set(true, forKey: "ghost.keychain.migrated")
         }
 
-        var key = KeychainManager.shared.load(service: "com.ghost.app.license") ?? ""
-        if key.isEmpty {
-            // No license key saved — use debug key so the app works
-            key = "GHOST-DEBUG"
-            KeychainManager.shared.save(key: key, service: "com.ghost.app.license")
-            print("Ghost: no license key found — saved GHOST-DEBUG")
-        }
-        print("Ghost: license key loaded = \(key)")
+        let key = KeychainManager.shared.load(service: "com.ghost.app.license") ?? ""
         AIManager.shared.licenseKey = key
 
         NSApp.setActivationPolicy(.accessory)
@@ -122,13 +102,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ghostWindow = GhostWindow()
 
         GlobalHotkeyManager.shared.onHotkey = { [weak self] in
-            print("Ghost: hotkey fired — activating")
             self?.ghostWindow?.activate()
         }
-        print("Ghost: AXIsProcessTrusted = \(AXIsProcessTrusted())")
-        print("Ghost: starting hotkey manager...")
         GlobalHotkeyManager.shared.start()
-        print("Ghost: hotkey manager started")
 
         setupMenuBar()
 
@@ -157,7 +133,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             queue: .main
         ) { notification in
             if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication {
-                print("Focus moved to: \(app.localizedName ?? "unknown")")
                 if app.bundleIdentifier == Bundle.main.bundleIdentifier {
                     GlobalHotkeyManager.shared.restart()
                 }
@@ -191,8 +166,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // FIX 5: check backend health
         checkBackendHealth()
-
-        print("Ghost: ready — Cmd+Shift+Space to activate")
     }
 
     // MARK: - FIX 5: Backend health check
@@ -203,14 +176,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         URLSession.shared.dataTask(with: url) { [weak self] data, _, error in
             DispatchQueue.main.async {
                 if error != nil || data == nil {
-                    print("Ghost: ⚠️ Backend not running!")
-                    print("Ghost: Start it with: cd ghost-server && node server.js")
                     self?.statusItem?.button?.toolTip = "⚠️ Server offline — answers won't work"
                     if let item = self?.statusItem?.menu?.item(withTag: 100) {
                         item.title = "⚠️ Server offline"
                     }
                 } else {
-                    print("Ghost: ✓ Backend connected")
                     self?.statusItem?.button?.toolTip = "Ghost — Press Cmd+Shift+Space"
                     if let item = self?.statusItem?.menu?.item(withTag: 100) {
                         item.title = "✓ Server connected"
@@ -255,14 +225,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
-        menu.addItem(NSMenuItem(
-            title: "Reset Onboarding",
-            action: #selector(resetOnboarding),
-            keyEquivalent: ""
-        ))
-
-        menu.addItem(NSMenuItem.separator())
-
         let queriesItem = NSMenuItem(title: "Queries: loading...", action: nil, keyEquivalent: "")
         queriesItem.tag = 99
         menu.addItem(queriesItem)
@@ -287,16 +249,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func resetPanelPosition() {
         UserDefaults.standard.removeObject(forKey: "ghost.panel.position")
-        print("Ghost: panel position reset")
     }
 
-    @objc func resetOnboarding() {
-        UserDefaults.standard.removeObject(forKey: "ghost.onboarding.complete")
-        KeychainManager.shared.delete(service: "com.ghost.app.license")
-        let url = Bundle.main.bundleURL
-        Process.launchedProcess(launchPath: "/usr/bin/open", arguments: [url.path])
-        NSApp.terminate(nil)
-    }
 }
 
 // MARK: - Onboarding state

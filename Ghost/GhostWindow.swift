@@ -113,7 +113,6 @@ class GhostWindow: NSPanel {
             break
         }
 
-        print("Ghost: activate() called")
         state = .selecting
         startEscConsumer()
 
@@ -121,10 +120,8 @@ class GhostWindow: NSPanel {
             answerPanel = AnswerPanel()
 
             answerPanel?.onFollowUp = { [weak self] text, mode in
-                print("🟡 onFollowUp fired, mode=\(mode), image=\(((mode == .screenshot) ? self?.currentScreenshot : nil) == nil ? "nil" : "present")")
-                guard let self = self else { print("Ghost: self is nil!"); return }
+                guard let self = self else { return }
                 let image: NSImage? = (mode == .screenshot) ? self.currentScreenshot : nil
-                print("🟡 calling query, prompt='\(text)'")
 
                 let followUpBubble = self.answerPanel?.currentStreamingBubble
 
@@ -146,7 +143,6 @@ class GhostWindow: NSPanel {
                         )
                     },
                     onError: { [weak self] error in
-                        print("Ghost: follow-up error = \(error)")
                         self?.answerPanel?.appendStreamingText("⚠️ \(error)")
                         if self?.answerPanel?.currentStreamingBubble === followUpBubble {
                             self?.answerPanel?.finalizeStreamingBubble()
@@ -169,8 +165,6 @@ class GhostWindow: NSPanel {
 
         selectionView.onRegionSelected = { [weak self] rect in
             guard let self = self else { return }
-            print("Ghost: selected region \(rect)")
-
             ScreenCaptureManager.capture(region: rect) { [weak self] image in
                 guard let self = self else { return }
                 guard let image = image else {
@@ -181,7 +175,6 @@ class GhostWindow: NSPanel {
                 self.currentScreenshot = image
                 AIManager.shared.clearHistory()
 
-                print("Ghost: image captured, sending to AI...")
                 let screen = NSScreen.main ?? NSScreen.screens[0]
                 self.answerPanel?.show(near: rect, onScreen: screen)
                 self.answerPanel?.showScreenshotPill()
@@ -201,7 +194,6 @@ class GhostWindow: NSPanel {
                         self?.answerPanel?.appendStreamingText(chunk)
                     },
                     onComplete: { [weak self] fullText in
-                        print("Ghost: answer complete")
                         if self?.answerPanel?.currentStreamingBubble === screenshotBubble {
                             self?.answerPanel?.finalizeStreamingBubble()
                         }
@@ -213,7 +205,6 @@ class GhostWindow: NSPanel {
                         )
                     },
                     onError: { [weak self] error in
-                        print("Ghost: error = \(error)")
                         self?.answerPanel?.appendStreamingText("⚠️ \(error)")
                         if self?.answerPanel?.currentStreamingBubble === screenshotBubble {
                             self?.answerPanel?.finalizeStreamingBubble()
@@ -237,7 +228,6 @@ class GhostWindow: NSPanel {
         }
 
         safetyTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: false) { [weak self] _ in
-            print("Ghost: safety timeout — force deactivating")
             self?.deactivate()
         }
     }
@@ -269,7 +259,6 @@ class GhostWindow: NSPanel {
         stopEscConsumer()
         state = .hidden
         NotificationCenter.default.post(name: NSNotification.Name("GhostPanelHidden"), object: nil)
-        print("Ghost: panel hidden — content preserved")
     }
 
     // MARK: - Restore
@@ -286,7 +275,6 @@ class GhostWindow: NSPanel {
         startEscConsumer()
         state = .answering
         NotificationCenter.default.post(name: NSNotification.Name("GhostPanelRestored"), object: nil)
-        print("Ghost: panel restored with preserved content")
     }
 
     // MARK: - Full dismiss (clear content)
@@ -299,7 +287,6 @@ class GhostWindow: NSPanel {
         AIManager.shared.clearHistory()
         state = .idle
         NotificationCenter.default.post(name: NSNotification.Name("GhostPanelRestored"), object: nil)
-        print("Ghost: full dismiss — content cleared")
     }
 
     // MARK: - ESC consumer (CGEvent tap — consumes ESC before Safari sees it)
@@ -316,14 +303,12 @@ class GhostWindow: NSPanel {
             userInfo: Unmanaged.passUnretained(self).toOpaque()
         )
         guard let tap = escEventTap else {
-            print("Ghost: ESC consumer tap failed")
             return
         }
         let source = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, tap, 0)
         escRunLoopSource = source
         CFRunLoopAddSource(CFRunLoopGetMain(), source, .commonModes)
         CGEvent.tapEnable(tap: tap, enable: true)
-        print("Ghost: ESC consumer active")
     }
 
     func stopEscConsumer() {
@@ -336,7 +321,6 @@ class GhostWindow: NSPanel {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), source, .commonModes)
             escRunLoopSource = nil
         }
-        print("Ghost: ESC consumer stopped")
     }
 
     // MARK: - Click catcher (global monitor — observes without consuming)

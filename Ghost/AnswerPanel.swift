@@ -164,7 +164,6 @@ class AnswerPanel: NSPanel {
 
     func savePositionPublic(_ origin: NSPoint) {
         savePosition(origin)
-        print("Ghost: panel position saved \(origin)")
     }
 
     func saveSizePublic(_ size: NSSize) {
@@ -492,17 +491,11 @@ class AnswerPanel: NSPanel {
 
     func startNewAssistantBubble() {
         currentStreamingBubble = addBubble(text: "", role: "assistant")
-        print("🔵 bubble created in \(currentMode == .screenshot ? "screenshotStack" : "chatStack")")
-        print("🔵 currentStreamingBubble set: \(currentStreamingBubble != nil)")
     }
 
     func appendStreamingText(_ text: String) {
-        print("🔵 appendStreamingText called, chunk='\(text.prefix(30))', bubble=\(currentStreamingBubble != nil ? "EXISTS" : "NIL")")
         DispatchQueue.main.async {
-            guard let bubble = self.currentStreamingBubble else {
-                print("🔵 appendStreamingText: bubble is NIL, dropping chunk")
-                return
-            }
+            guard let bubble = self.currentStreamingBubble else { return }
             bubble.stringValue += text
             bubble.invalidateIntrinsicContentSize()
             self.activeStack.needsLayout = true
@@ -537,7 +530,6 @@ class AnswerPanel: NSPanel {
     // MARK: - Show / Dismiss
 
     func show(near rect: NSRect, onScreen screen: NSScreen) {
-        print("🔵 show() called, resetting stacks")
         // Clear both stacks for fresh session
         screenshotStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         chatStack.arrangedSubviews.forEach { $0.removeFromSuperview() }
@@ -667,8 +659,6 @@ class AnswerPanel: NSPanel {
         screenshotStack.isHidden = true
         chatStack.isHidden = false
 
-        print("🔵 switched to chat, chatStack.isHidden=\(chatStack.isHidden), screenshotStack.isHidden=\(screenshotStack.isHidden)")
-
         AIManager.shared.clearHistory()
         hideScreenshotPill()
         inputField.placeholderString = "Ask anything..."
@@ -724,15 +714,12 @@ class AnswerPanel: NSPanel {
     // MARK: - Send message
 
     @objc func sendMessage() {
-        print("🔵 sendMessage called, text='\(inputField.stringValue)', mode=\(currentMode)")
         let text = inputField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         addUserBubble(text)
         inputField.stringValue = ""
-        print("🔵 startNewAssistantBubble called, activeStack=\(currentMode == .screenshot ? "screenshot" : "chat"), chatHidden=\(chatStack.isHidden)")
         startNewAssistantBubble()
         dismissTimer?.invalidate()
-        print("Ghost: firing onFollowUp, onFollowUp isNil=\(onFollowUp == nil)")
         onFollowUp?(text, currentMode)
     }
 

@@ -21,7 +21,6 @@ final class ScreenCaptureManager {
         process.terminationHandler = { p in
             DispatchQueue.main.async {
                 if p.terminationStatus != 0 {
-                    print("Ghost: capture failed exit=\(p.terminationStatus)")
                     NotificationCenter.default.post(
                         name: NSNotification.Name("GhostDeactivate"),
                         object: nil
@@ -42,7 +41,6 @@ final class ScreenCaptureManager {
         do {
             try process.run()
         } catch {
-            print("Ghost: could not run screencapture: \(error)")
             DispatchQueue.main.async { completion(nil) }
         }
     }

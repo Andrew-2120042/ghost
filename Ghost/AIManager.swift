@@ -14,7 +14,7 @@ final class AIManager {
     static let shared = AIManager()
     private init() {}
 
-    private let serverURL = "http://localhost:3000"
+    private let serverURL = Config.serverURL
     var licenseKey: String = ""
     var conversationHistory: [ChatMessage] = []
 
@@ -32,10 +32,6 @@ final class AIManager {
                onComplete: @escaping (String) -> Void,
                onError: @escaping (String) -> Void) {
 
-        print("🟢 AIManager.query called, image=\(image == nil ? "nil" : "present"), prompt='\(prompt)'")
-        print("Ghost: licenseKey = '\(licenseKey)'")
-        print("Ghost: serverURL = \(serverURL)")
-        print("Ghost: history count = \(conversationHistory.count)")
         guard !licenseKey.isEmpty else {
             onError("No license key")
             return
@@ -59,7 +55,6 @@ final class AIManager {
         ]
 
         if let image = image, let base64 = imageToBase64(image) {
-            print("Ghost: image base64 length = \(base64.count)")
             body["image"] = base64
         }
 
@@ -136,8 +131,6 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
                     didReceive data: Data) {
         guard let text = String(data: data, encoding: .utf8) else { return }
 
-        print("🟢 SSE data received: \(text.prefix(100))")
-        print("Ghost: raw server data = \(text.prefix(200))")
 
         // Handle raw JSON error responses (non-SSE, e.g. 401/402 before SSE headers)
         if text.hasPrefix("{"), let jsonData = text.data(using: .utf8),
@@ -165,14 +158,12 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
 
             if let chunk = json["text"] as? String {
                 fullResponse += chunk
-                print("Ghost: chunk received = \(chunk)")
                 DispatchQueue.main.async { self.onChunk(chunk) }
             } else if let done = json["done"] as? Bool, done {
                 let full = json["fullText"] as? String ?? fullResponse
                 didFireComplete = true
                 DispatchQueue.main.async { self.onComplete(full) }
             } else if let error = json["error"] as? String {
-                print("Ghost: server error = \(error)")
                 DispatchQueue.main.async { self.onError(error) }
             }
         }
@@ -183,11 +174,8 @@ private class SSEDelegate: NSObject, URLSessionDataDelegate {
                     didCompleteWithError error: Error?) {
         DispatchQueue.main.async {
             if let error = error {
-                print("Ghost: stream error = \(error.localizedDescription)")
                 self.onError(error.localizedDescription)
             } else if !self.didFireComplete && !self.fullResponse.isEmpty {
-                // Fallback: done signal never arrived but we have content
-                print("Ghost: stream complete (fallback)")
                 self.onComplete(self.fullResponse)
             }
         }

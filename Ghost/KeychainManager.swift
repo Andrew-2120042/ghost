@@ -25,10 +25,7 @@ final class KeychainManager {
             kSecValueData as String: data,
             kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         ]
-        let status = SecItemAdd(addQuery as CFDictionary, nil)
-        if status != errSecSuccess {
-            print("Ghost: Keychain save failed: \(status)")
-        }
+        SecItemAdd(addQuery as CFDictionary, nil)
     }
 
     func load(service: String) -> String? {

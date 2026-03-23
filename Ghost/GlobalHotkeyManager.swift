@@ -12,9 +12,7 @@ final class GlobalHotkeyManager {
     private var permissionPollTimer: Timer?
 
     func start() {
-        print("Ghost: start() called, AXTrusted=\(AXIsProcessTrusted())")
         guard AXIsProcessTrusted() else {
-            print("Ghost: accessibility not granted — prompting via system dialog")
             // Show macOS system dialog (only appears once; silent if already granted)
             let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
             AXIsProcessTrustedWithOptions(opts as CFDictionary)
@@ -23,7 +21,6 @@ final class GlobalHotkeyManager {
             return
         }
 
-        print("Ghost: creating event tap...")
         let mask = CGEventMask(1 << CGEventType.keyDown.rawValue)
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
 
@@ -42,12 +39,10 @@ final class GlobalHotkeyManager {
 
                 let keyCode = event.getIntegerValueField(.keyboardEventKeycode)
                 let flags = event.flags
-                print("Ghost: keyevent keyCode=\(keyCode) flags=\(flags.rawValue)")
                 let cmdShift: CGEventFlags = [.maskCommand, .maskShift]
 
                 // Cmd+Shift+Space (keycode 49)
                 if keyCode == 49 && flags.intersection(cmdShift) == cmdShift {
-                    print("Ghost: hotkey detected keyCode=\(keyCode)")
                     DispatchQueue.main.async { manager.onHotkey?() }
                     return nil // consume the event
                 }
@@ -57,14 +52,7 @@ final class GlobalHotkeyManager {
             userInfo: selfPtr
         )
 
-        if eventTap != nil {
-            print("Ghost: event tap CREATED successfully")
-        } else {
-            print("Ghost: event tap FAILED — nil")
-        }
-
         guard let tap = eventTap else {
-            print("Ghost: event tap NIL even with AXTrusted — registering fallback local monitor")
             registerLocalMonitor()
             return
         }
@@ -76,12 +64,10 @@ final class GlobalHotkeyManager {
         // Watch for tap becoming invalid so we can restart rather than freeze keyboard
         CFMachPortSetInvalidationCallBack(tap) { _, _ in
             DispatchQueue.main.async {
-                print("Ghost: event tap invalidated — restarting")
                 GlobalHotkeyManager.shared.restart()
             }
         }
 
-        print("Ghost: global hotkey active (Cmd+Shift+Space)")
     }
 
     private func startPermissionPolling() {
@@ -89,7 +75,6 @@ final class GlobalHotkeyManager {
         permissionPollTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] timer in
             guard let self = self else { timer.invalidate(); return }
             if AXIsProcessTrusted() {
-                print("Ghost: accessibility granted — creating event tap")
                 timer.invalidate()
                 self.permissionPollTimer = nil
                 if let m = self.localMonitor { NSEvent.removeMonitor(m); self.localMonitor = nil }
@@ -103,14 +88,12 @@ final class GlobalHotkeyManager {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             let keyCode = event.keyCode
             let flags = event.modifierFlags
-            print("Ghost: raw keyevent \(keyCode)")
             if keyCode == 49 && flags.contains(.command) && flags.contains(.shift) {
                 DispatchQueue.main.async { self?.onHotkey?() }
                 return nil
             }
             return event
         }
-        print("Ghost: fallback local monitor registered")
     }
 
     func stop() {
@@ -122,7 +105,6 @@ final class GlobalHotkeyManager {
     }
 
     func restart() {
-        print("Ghost: restarting hotkey manager...")
         if let tap = eventTap { CGEvent.tapEnable(tap: tap, enable: false) }
         eventTap = nil
         runLoopSource = nil

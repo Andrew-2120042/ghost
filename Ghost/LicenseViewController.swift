@@ -132,16 +132,6 @@ class LicenseViewController: NSViewController, NSTextFieldDelegate {
     @objc private func activateKey() {
         let key = textField.stringValue.trimmingCharacters(in: .whitespaces).uppercased()
 
-        // Easter egg: skip network for GHOST-DEBUG
-        if key == "GHOST-DEBUG" {
-            KeychainManager.shared.save(key: key, service: "com.ghost.app.license")
-            AIManager.shared.licenseKey = key
-            statusLabel.textColor = .systemGreen
-            statusLabel.stringValue = "✓ Debug mode activated"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.onComplete?() }
-            return
-        }
-
         spinner.startAnimation(nil)
         activateButton.isEnabled = false
         statusLabel.stringValue = ""
