@@ -50,6 +50,7 @@ final class AIManager {
 
         var body: [String: Any] = [
             "licenseKey": licenseKey,
+            "deviceHash": DeviceManager.shared.deviceHash,
             "provider": provider,
             "prompt": prompt
         ]
@@ -81,7 +82,10 @@ final class AIManager {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let body = ["licenseKey": key]
+        let body: [String: Any] = [
+            "licenseKey": key,
+            "deviceHash": DeviceManager.shared.deviceHash
+        ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         URLSession.shared.dataTask(with: request) { data, _, _ in
@@ -91,9 +95,9 @@ final class AIManager {
                 return
             }
             let valid = json["valid"] as? Bool ?? false
-            let queries = json["queriesRemaining"] as? Int ?? 0
+            let days = json["daysRemaining"] as? Int ?? 0
             let error = json["error"] as? String
-            DispatchQueue.main.async { completion(valid, queries, error) }
+            DispatchQueue.main.async { completion(valid, days, error) }
         }.resume()
     }
 

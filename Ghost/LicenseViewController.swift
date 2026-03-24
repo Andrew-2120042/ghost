@@ -136,7 +136,7 @@ class LicenseViewController: NSViewController, NSTextFieldDelegate {
         activateButton.isEnabled = false
         statusLabel.stringValue = ""
 
-        AIManager.shared.validateLicense(key: key) { valid, queries, error in
+        AIManager.shared.validateLicense(key: key) { valid, days, error in
             self.spinner.stopAnimation(nil)
             self.activateButton.isEnabled = true
 
@@ -144,7 +144,7 @@ class LicenseViewController: NSViewController, NSTextFieldDelegate {
                 KeychainManager.shared.save(key: key, service: "com.ghost.app.license")
                 AIManager.shared.licenseKey = key
                 self.statusLabel.textColor = .systemGreen
-                self.statusLabel.stringValue = "✓ \(queries) queries activated"
+                self.statusLabel.stringValue = "✓ \(days) days remaining"
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.onComplete?() }
             } else {
                 self.statusLabel.textColor = .systemRed

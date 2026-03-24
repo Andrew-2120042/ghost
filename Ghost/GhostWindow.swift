@@ -205,7 +205,10 @@ class GhostWindow: NSPanel {
                         )
                     },
                     onError: { [weak self] error in
-                        self?.answerPanel?.appendStreamingText("⚠️ \(error)")
+                        let message = error.lowercased().contains("device")
+                            ? "⚠️ This key is registered to another Mac.\nPurchase a new license at ghost.yourdomain.com"
+                            : "⚠️ \(error)"
+                        self?.answerPanel?.appendStreamingText(message)
                         if self?.answerPanel?.currentStreamingBubble === screenshotBubble {
                             self?.answerPanel?.finalizeStreamingBubble()
                         }
